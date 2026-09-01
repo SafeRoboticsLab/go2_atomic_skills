@@ -1,0 +1,225 @@
+=== VALUE-FILTER faithfulness gate ===
+  task=go2_gap_brake_or_jump_ra_w30  arm=ra_w30  eps=0.25  n_envs=8  steps=120
+Terrain generation took 0.0007 seconds.
+Warp 1.12.0 initialized:
+   CUDA Toolkit 12.9, Driver 13.0
+   Devices:
+     "cpu"      : "x86_64"
+     "cuda:0"   : "NVIDIA GeForce RTX 4070" (12 GiB, sm_89, mempool enabled)
+   Kernel cache:
+     /home/buzi/.cache/warp/1.12.0
+Warp DeprecationWarning: The symbol `warp.context.runtime` will soon be removed from the public API. It can still be accessed from `warp._src.context.runtime` but might be changed or removed without notice.
+Module mujoco_warp._src.smooth f756680 load on device 'cuda:0' took 2.27 ms  (cached)
+Module mujoco_warp._src.collision_driver 4d8b905 load on device 'cuda:0' took 0.27 ms  (cached)
+Module _nxn_broadphase__locals__kernel_e916423b e916423 load on device 'cuda:0' took 0.30 ms  (cached)
+Module ccd_kernel_builder__locals__ccd_kernel_f3100259 f310025 load on device 'cuda:0' took 0.91 ms  (cached)
+Module ccd_kernel_builder__locals__ccd_kernel_19eb3db9 19eb3db load on device 'cuda:0' took 1.51 ms  (cached)
+Module _primitive_narrowphase__locals__primitive_narrowphase_b6c8812b b6c8812 load on device 'cuda:0' took 0.49 ms  (cached)
+Module mujoco_warp._src.constraint 63c97cb load on device 'cuda:0' took 1.95 ms  (cached)
+Module mujoco_warp._src.forward 7114b3d load on device 'cuda:0' took 0.82 ms  (cached)
+Module mujoco_warp._src.passive 7fb8524 load on device 'cuda:0' took 0.78 ms  (cached)
+Module mujoco_warp._src.sensor 912ac95 load on device 'cuda:0' took 2.01 ms  (cached)
+Module mujoco_warp._src.forward 5a5c0b5 load on device 'cuda:0' took 0.79 ms  (cached)
+Module mujoco_warp._src.support 343d1ae load on device 'cuda:0' took 0.30 ms  (cached)
+Module _tile_cholesky_factorize_solve__locals__cholesky_factorize_solve_886404d2 159512a load on device 'cuda:0' took 25.82 ms  (cached)
+Module mujoco_warp._src.solver eaac975 load on device 'cuda:0' took 1.10 ms  (cached)
+Module solve_init_jaref__locals__kernel_314bd857 314bd85 load on device 'cuda:0' took 0.30 ms  (cached)
+Module mul_m_dense__locals___mul_m_dense_c372b8a5 c372b8a load on device 'cuda:0' took 0.28 ms  (cached)
+Module update_constraint_efc__locals__kernel_84abb40b 84abb40 load on device 'cuda:0' took 0.29 ms  (cached)
+Module update_constraint_gauss_cost__locals__kernel_ef360293 ef36029 load on device 'cuda:0' took 0.28 ms  (cached)
+Module update_gradient_JTDAJ_dense_tiled__locals__kernel_e017d836 b70b619 load on device 'cuda:0' took 0.50 ms  (cached)
+Module update_gradient_cholesky__locals__kernel_10e97a41 ebdd544 load on device 'cuda:0' took 25.71 ms  (cached)
+Module linesearch_jv_fused__locals__kernel_171b5723 171b572 load on device 'cuda:0' took 0.32 ms  (cached)
+Module linesearch_prepare_gauss__locals__kernel_7bbb5979 7bbb597 load on device 'cuda:0' took 0.30 ms  (cached)
+Module update_constraint_efc__locals__kernel_19805a28 19805a2 load on device 'cuda:0' took 0.33 ms  (cached)
+Module _contact_sort__locals__contact_sort_96ed3dae e0ada9e load on device 'cuda:0' took 0.35 ms  (cached)
+Module mujoco_warp._src.derivative 9dcaac1 load on device 'cuda:0' took 0.38 ms  (cached)
+Module reset_data__locals__reset_xfrc_applied_f86f0829 f86f082 load on device 'cuda:0' took 0.52 ms  (cached)
+Module reset_data__locals__reset_qM_1511185b 1511185 load on device 'cuda:0' took 0.25 ms  (cached)
+Module reset_data__locals__reset_mocap_841cb68f 841cb68 load on device 'cuda:0' took 0.24 ms  (cached)
+Module reset_data__locals__reset_contact_76c1c25e 76c1c25 load on device 'cuda:0' took 0.25 ms  (cached)
+Module reset_data__locals__reset_nworld_d108b6ac d108b6a load on device 'cuda:0' took 0.28 ms  (cached)
+Module mujoco_warp._src.render_util 9cda0d9 load on device 'cuda:0' took 0.41 ms  (cached)
+Module mujoco_warp._src.bvh bd340bf load on device 'cuda:0' took 0.56 ms  (cached)
+Module mujoco_warp._src.ray edca8cc load on device 'cuda:0' took 0.81 ms  (cached)
+
++---------------------------------+
+|         Base Environment        |
++------------------------+--------+
+| Property               | Value  |
++------------------------+--------+
+| Number of environments | 8      |
+| Environment device     | cuda:0 |
+| Environment seed       | None   |
+| Physics step-size      | 0.005  |
+| Environment step-size  | 0.02   |
++------------------------+--------+
+
+[INFO] <EventManager> contains 2 active terms.
++-------------------------------------+
+| Active Event Terms in Mode: 'reset' |
++------------+------------------------+
+|   Index    | Name                   |
++------------+------------------------+
+|     0      | reset_base             |
++------------+------------------------+
++---------------------------------------+
+| Active Event Terms in Mode: 'startup' |
++-----------+---------------------------+
+|   Index   | Name                      |
++-----------+---------------------------+
+|     0     | foot_friction             |
+|     1     | encoder_bias              |
+|     2     | base_com                  |
++-----------+---------------------------+
++-----------------------------+
+| Domain Randomization Fields |
++-------+---------------------+
+| Index | Field Name          |
++-------+---------------------+
+|   0   | geom_friction       |
+|   1   | body_ipos           |
+|   2   | body_subtreemass    |
+|   3   | dof_invweight0      |
+|   4   | body_invweight0     |
+|   5   | tendon_length0      |
+|   6   | tendon_invweight0   |
++-------+---------------------+
+
+Module repeat_array_kernel_39317a34 b712927 load on device 'cuda:0' took 0.27 ms  (cached)
+Module repeat_array_kernel_39317a34 b699bd8 load on device 'cuda:0' took 0.27 ms  (cached)
+Module repeat_array_kernel_39317a34 363ede1 load on device 'cuda:0' took 0.29 ms  (cached)
+[INFO] <CommandManager> contains 1 active terms.
++----------------------------------------+
+|          Active Command Terms          |
++-------+-------+------------------------+
+| Index | Name  |          Type          |
++-------+-------+------------------------+
+|   0   | twist | UniformVelocityCommand |
++-------+-------+------------------------+
+
+[INFO] <ActionManager> contains 1 active terms.
++---------------------------------+
+| Active Action Terms (shape: 12) |
++-------+-----------+-------------+
+| Index | Name      |   Dimension |
++-------+-----------+-------------+
+|   0   | joint_pos |          12 |
++-------+-----------+-------------+
+
+[INFO] <ObservationManager> contains 3 groups.
++----------------------------------------------------------------------+
+| Active Observation Terms in Group: 'proprioception' (shape: (1175,)) |
++---------+----------------------------+-------------------------------+
+|  Index  | Name                       |             Shape             |
++---------+----------------------------+-------------------------------+
+|    0    | base_ang_vel               |        (15,)  ← 5×(3,)        |
+|    1    | projected_gravity          |        (15,)  ← 5×(3,)        |
+|    2    | command                    |        (15,)  ← 5×(3,)        |
+|    3    | phase                      |        (10,)  ← 5×(2,)        |
+|    4    | base_height                |         (5,)  ← 5×(1,)        |
+|    5    | joint_pos                  |        (60,)  ← 5×(12,)       |
+|    6    | joint_vel                  |        (60,)  ← 5×(12,)       |
+|    7    | actions                    |        (60,)  ← 5×(12,)       |
+|    8    | height_scan                |       (935,)  ← 5×(187,)      |
++---------+----------------------------+-------------------------------+
++--------------------------------------------------------------+
+| Active Observation Terms in Group: 'critic' (shape: (1295,)) |
++--------+--------------------------+--------------------------+
+| Index  | Name                     |          Shape           |
++--------+--------------------------+--------------------------+
+|   0    | base_ang_vel             |     (15,)  ← 5×(3,)      |
+|   1    | projected_gravity        |     (15,)  ← 5×(3,)      |
+|   2    | command                  |     (15,)  ← 5×(3,)      |
+|   3    | phase                    |     (10,)  ← 5×(2,)      |
+|   4    | base_height              |      (5,)  ← 5×(1,)      |
+|   5    | joint_pos                |     (60,)  ← 5×(12,)     |
+|   6    | joint_vel                |     (60,)  ← 5×(12,)     |
+|   7    | actions                  |     (60,)  ← 5×(12,)     |
+|   8    | height_scan              |    (935,)  ← 5×(187,)    |
+|   9    | base_lin_vel             |     (15,)  ← 5×(3,)      |
+|   10   | foot_height              |     (20,)  ← 5×(4,)      |
+|   11   | foot_contact             |     (20,)  ← 5×(4,)      |
+|   12   | foot_contact_forces      |     (60,)  ← 5×(12,)     |
+|   13   | forward_distance         |      (5,)  ← 5×(1,)      |
++--------+--------------------------+--------------------------+
++-----------------------------------------------------------+
+| Active Observation Terms in Group: 'actor' (shape: (47,)) |
++--------+------------------------+-------------------------+
+| Index  | Name                   |          Shape          |
++--------+------------------------+-------------------------+
+|   0    | base_ang_vel           |      (3,)  ← 1×(3,)     |
+|   1    | projected_gravity      |      (3,)  ← 1×(3,)     |
+|   2    | command                |      (3,)  ← 1×(3,)     |
+|   3    | phase                  |      (2,)  ← 1×(2,)     |
+|   4    | joint_pos              |     (12,)  ← 1×(12,)    |
+|   5    | joint_vel              |     (12,)  ← 1×(12,)    |
+|   6    | actions                |     (12,)  ← 1×(12,)    |
++--------+------------------------+-------------------------+
+
+[INFO] <TerminationManager> contains 4 active terms.
++---------------------------------------------+
+|           Active Termination Terms          |
++-------+--------------------------+----------+
+| Index | Name                     | Time Out |
++-------+--------------------------+----------+
+|   0   | time_out                 |   True   |
+|   1   | fell_over                |  False   |
+|   2   | illegal_contact          |  False   |
+|   3   | base_below_local_terrain |  False   |
++-------+--------------------------+----------+
+
+[INFO] <RewardManager> contains 20 active terms.
++------------------------------------------+
+|           Active Reward Terms            |
++-------+-----------------------+----------+
+| Index | Name                  |   Weight |
++-------+-----------------------+----------+
+|   0   | track_linear_velocity |      1.5 |
+|   1   | forward_progress      |      1.0 |
+|   2   | feet_gait             |     0.25 |
+|   3   | lateral_velocity      |     -0.5 |
+|   4   | yaw_rate              |     -0.1 |
+|   5   | body_orientation      |     -2.0 |
+|   6   | body_height           |     -0.5 |
+|   7   | body_ang_vel          |    -0.05 |
+|   8   | body_collision        |     -1.0 |
+|   9   | feet_clearance        |    -0.25 |
+|   10  | feet_slip             |     -0.2 |
+|   11  | soft_landing          |  -0.0005 |
+|   12  | action_rate_l2        |    -0.05 |
+|   13  | joint_acc_l2          | -2.5e-07 |
+|   14  | joint_pos_limits      |     -5.0 |
+|   15  | energy_penalty        |   -1e-05 |
+|   16  | gap_crossing          |      5.0 |
+|   17  | gap_crossing_bonus    |     10.0 |
+|   18  | is_terminated         |    -50.0 |
+|   19  | zoo_safety_hook       |      1.0 |
++-------+-----------------------+----------+
+
+[INFO] <NullCurriculumManager> (inactive)
+[INFO] <NullMetricsManager> (inactive)
+Module mujoco_warp._src.io ad190f3 load on device 'cuda:0' took 1.24 ms  (cached)
+Module _tile_cholesky_factorize__locals__cholesky_factorize_bd98e5db 78076c6 load on device 'cuda:0' took 20.44 ms  (cached)
+Module _tile_cholesky_solve__locals__cholesky_solve_7bd08b0a 54b9810 load on device 'cuda:0' took 44.67 ms  (cached)
+  obs: nominal='actor' safety='proprioception'
+/home/buzi/miniconda3/envs/mjlab/lib/python3.11/site-packages/stable_baselines3/common/on_policy_algorithm.py:150: UserWarning: You are trying to run ReachAvoidPPO1P on the GPU, but it is primarily intended to run on the CPU when not using a CNN policy (you are using ActorCriticPolicy which should be a MlpPolicy). See https://github.com/DLR-RM/stable-baselines3/issues/1245 for more info. You can pass `device='cpu'` or `export CUDA_VISIBLE_DEVICES=` to force using the CPU.Note: The model will train, but the GPU utilization will be poor and the training might take longer than on CPU.
+  warnings.warn(
+[twin] /home/buzi/Desktop/RESEARCH/SAFE/DEVELOPMENT/safe_mjlab_zoo/runs/gap_e040_resaved/ra_w30/final_model.zip (ReachAvoidPPO1P) + tensornormalize.pt
+[filter] value: intervention = LeastRestrictiveIntervention (canonical switch, eps=0.25)
+/home/buzi/miniconda3/envs/mjlab/lib/python3.11/site-packages/stable_baselines3/common/on_policy_algorithm.py:150: UserWarning: You are trying to run PPO on the GPU, but it is primarily intended to run on the CPU when not using a CNN policy (you are using ActorCriticPolicy which should be a MlpPolicy). See https://github.com/DLR-RM/stable-baselines3/issues/1245 for more info. You can pass `device='cpu'` or `export CUDA_VISIBLE_DEVICES=` to force using the CPU.Note: The model will train, but the GPU utilization will be poor and the training might take longer than on CPU.
+  warnings.warn(
+[nominal] /home/buzi/Desktop/RESEARCH/SAFE/DEVELOPMENT/safe_mjlab_zoo/runs/go2_walker_flat/final_model.zip (PPO) (+ vecnormalize.pkl)
+Setting seed: 0
+
+=== RESULTS ===
+  comparisons            : 960  (8 envs x 120 steps)
+  harness engaged frac   : 0.910 (both branches exercised iff in (0,1))
+  worst |V_pkg - V_harness| = 1.073e-06   (tol 1e-04)
+  per-env worst |dV|     : 7.2e-07 4.8e-07 5.4e-07 7.2e-07 1.1e-06 5.1e-07 9.5e-07 6.0e-07
+  engage-mask mismatches : 0 / 960
+
+  V gate     : PASS (worst 1.07e-06 < 1e-04)
+  mask gate  : PASS (0 mismatches)
+
+  RESULT: ALL PASS
