@@ -25,11 +25,23 @@ from .obs import (ACTION_SCALE, CTRL_GAIN, DEFAULT_JOINT_POS, JUMP_FRAME_DIM,
                   build_walker_obs)
 
 
-def _ctrl(policy_out: np.ndarray) -> np.ndarray:
-  """Post-gain control vector: clip to [-1,1] (SB3 does this before stepping)
-  then apply the bridge's ctrl_gain. This is BOTH the `actions` obs term and the
-  thing the joint-target formula scales."""
-  return (CTRL_GAIN * np.clip(policy_out, -1.0, 1.0)).astype(np.float32)
+def _ctrl(policy_out: np.ndarray, clip: bool = True) -> np.ndarray:
+  """Post-gain control vector: apply the bridge's ctrl_gain to the policy output.
+  This is BOTH the `actions` obs term and the thing the joint-target formula
+  scales.
+
+  ``clip`` controls whether the raw action is clamped to [-1,1] BEFORE the gain.
+  The GAP/JUMP arms were trained + evaluated through the tensor bridge
+  (``robot_safety_sandbox.base`` step_tensor), which applies ``ctrl = action *
+  ctrl_gain`` with **NO clip** — the deterministic policy mean routinely exceeds
+  |1| during an aggressive jump, and the env feeds that UNCLIPPED post-gain
+  value both to the actuators and back into the `actions` observation term. So
+  the jump arm must run unclipped (``clip=False``) to reproduce the trained
+  behaviour (verified: clipping bites at |a|>1 and desyncs V/action). The stock
+  SB3 walker (numpy VecEnv path) is stepped with SB3's own pre-step action-space
+  clip, so it keeps ``clip=True``."""
+  a = np.clip(policy_out, -1.0, 1.0) if clip else policy_out
+  return (CTRL_GAIN * a).astype(np.float32)
 
 
 def _target(ctrl: np.ndarray) -> np.ndarray:
@@ -59,7 +71,7 @@ class WalkSkill:
     o = self.norm(torch.as_tensor(obs, device=self.device).unsqueeze(0))
     with torch.no_grad():
       a = self.net(o).squeeze(0).cpu().numpy()
-    ctrl = _ctrl(a)                      # post-gain; also the next `actions` obs
+    ctrl = _ctrl(a)                      # walker: SB3-clipped post-gain (numpy VecEnv path)
     self.last_action = ctrl
     self.step += 1
     return _target(ctrl)
@@ -68,15 +80,18 @@ class WalkSkill:
 class JumpSkill:
   """Reach-avoid gap-jumping arm (1175-d = 235x5 history, ReachAvoidPPO1P).
 
-  ``width`` picks the gap variant the certificate was trained on:
-  'w30' (0.30 m, default), 'w20' (0.20 m), 'w12' (0.12 m).
+  ``width`` picks the arm:
+  'hando_w30' (DEFAULT) = the handover-range finetuned reach-avoid arm (gap
+  0.30, finetuned on real walker-handover states — the recommended deployment
+  arm); 'w30'/'w20'/'w12' = the from-scratch reverse-curriculum width ladder
+  (0.30 / 0.20 / 0.12 m) kept as selectable alternates.
 
   ``with_critic=True`` also loads the reach-avoid state-value head V(s) (the
   same certificate the arm was trained under), enabling ``value_and_action`` and
   the :class:`Go2ValueFilter`. It is off by default so a bare arm needs only the
   actor."""
 
-  def __init__(self, device: str = "cpu", width: str = "w30",
+  def __init__(self, device: str = "cpu", width: str = "hando_w30",
                with_critic: bool = False):
     self.device = device
     self.width = width
@@ -109,7 +124,7 @@ class JumpSkill:
     o = self.norm(torch.as_tensor(obs, device=self.device).unsqueeze(0))
     with torch.no_grad():
       a = self.net(o).squeeze(0).cpu().numpy()
-    ctrl = _ctrl(a)                      # post-gain; also the next `actions` obs
+    ctrl = _ctrl(a, clip=False)          # jump arm: UNCLIPPED post-gain (tensor-bridge fidelity)
     self.last_action = ctrl
     self.step += 1
     return _target(ctrl)
@@ -137,7 +152,7 @@ class JumpSkill:
     with torch.no_grad():
       a = self.net(o).squeeze(0).cpu().numpy()
       v = float(self.critic(o).squeeze(-1).cpu().item())
-    ctrl = _ctrl(a)                      # post-gain; also the next `actions` obs
+    ctrl = _ctrl(a, clip=False)          # jump arm: UNCLIPPED post-gain (tensor-bridge fidelity)
     self.last_action = ctrl
     self.step += 1
     return v, ctrl
@@ -158,7 +173,7 @@ class Go2Skills:
       tgt = skills.jump(obs_inputs, height_scan=None)
   """
 
-  def __init__(self, device: str = "cpu", jump_width: str = "w30"):
+  def __init__(self, device: str = "cpu", jump_width: str = "hando_w30"):
     self.device = device
     self.walk_skill = WalkSkill(device)
     self.jump_skill = JumpSkill(device, width=jump_width)
@@ -199,7 +214,7 @@ class Go2ValueFilter:
   this wrong silently corrupts V; see ``validation/validate_value_filter.py``.
   """
 
-  def __init__(self, device: str = "cpu", jump_width: str = "w30",
+  def __init__(self, device: str = "cpu", jump_width: str = "hando_w30",
                eps: float = 0.25):
     self.device = device
     self.eps = float(eps)

@@ -102,10 +102,14 @@ def extract_walker():
   print(f"  walker_norm: mean{rms.mean.shape} clip={vn.clip_obs} eps={vn.epsilon}")
 
 
-def extract_jump(width_tag, run_subdir):
+def extract_jump_dir(width_tag, run_dir, norm_name="tensornormalize.pt"):
+  """Extract a reach-avoid jump arm (actor + critic + normalizer) from a run
+  directory holding ``final_model.zip`` and its ``tensornormalize.pt``. The
+  packaged arms (E040b w12/w20/w30) live under ``runs/gap_e040_resaved/<tag>``;
+  the handover-range finetuned arm lives under its own run dir (see below)."""
   from robot_safety_sandbox.eval.policies import load_twin
-  print(f"== JUMP {width_tag} (safety_sb3 ReachAvoidPPO1P, {run_subdir}) ==")
-  zip_path = os.path.join(REPO, "runs/gap_e040_resaved", run_subdir, "final_model.zip")
+  zip_path = os.path.join(run_dir, "final_model.zip")
+  print(f"== JUMP {width_tag} (safety_sb3 ReachAvoidPPO1P, {run_dir}) ==")
   model, _norm = load_twin(zip_path, "cpu", quiet=True)
   policy = model.policy
   policy.set_training_mode(False)
@@ -121,8 +125,10 @@ def extract_jump(width_tag, run_subdir):
 
   # tensornormalize.pt = {obs_mean(1175), obs_var(1175), count}. Applied as
   #   clip((o - mean)/sqrt(var + 1e-8), -10, 10)  (see policies.load_twin).
-  st = torch.load(os.path.join(REPO, "runs/gap_e040_resaved", run_subdir,
-                               "tensornormalize.pt"),
+  # This is a safety_sb3 TensorNormalize (NOT SB3 VecNormalize) — the jump arms
+  # (including the handover finetune) all use it, so the extractor path is the
+  # same for E040b and the handover arm.
+  st = torch.load(os.path.join(run_dir, norm_name),
                   map_location="cpu", weights_only=True)
   torch.save({"obs_mean": st["obs_mean"].float(),
               "obs_var": st["obs_var"].float(),
@@ -132,9 +138,21 @@ def extract_jump(width_tag, run_subdir):
   print(f"  jump_norm_{width_tag}: mean{tuple(st['obs_mean'].shape)}")
 
 
+def extract_jump(width_tag, run_subdir):
+  extract_jump_dir(width_tag,
+                   os.path.join(REPO, "runs/gap_e040_resaved", run_subdir))
+
+
 if __name__ == "__main__":
   os.makedirs(OUT, exist_ok=True)
   extract_walker()
+  # Default DEPLOYMENT arm: handover-range finetuned reach-avoid arm, gap 0.30,
+  # 100M finetune on real walker-handover states, warm-started lineage. Tag
+  # 'hando_w30' (descriptive; no internal ticket numbers).
+  extract_jump_dir(
+    "hando_w30",
+    os.path.join(REPO, "runs/ras_e098/go2_gap_brake_or_jump_ra_hando"))
+  # Alternate arms: the from-scratch reverse-curriculum width ladder (E040b).
   extract_jump("w30", "ra_w30")
   extract_jump("w20", "ra_w20")
   extract_jump("w12", "ra_w12")
