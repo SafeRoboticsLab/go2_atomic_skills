@@ -180,3 +180,20 @@ intended — the safer outcome.
   the env-randomized gait phase (the package owns its clock).
 - `parity_hando_fakegap.py`: the `fake_gap_scan` override reproduces V and action
   from a real gap with **100% V-sign agreement across 0.3–0.6 m** (gap 0.20/0.30).
+
+## Narrow-gap setpoint (0.18–0.20 m), default arm `hando_w30` — measured 2026-09-03
+
+Package sim, fake-gap override, walker cmd 1.0, nominal gains, N=64 per cell. Crossing / survival /
+landing-pitch p90 / head-first / peak non-foot force:
+
+| D (distance trigger) | gap 0.20 | gap 0.18 |
+|---|---|---|
+| 0.40 | 0.98 / 0.98 / +3.4° / 0.00 / 1532 N | 0.25 / 0.25 / +1.6° / 0.12 / 1699 N |
+| **0.45** | **1.00 / 1.00 / +3.4° / 0.00 / 0 N** | **0.97 / 1.00 / +2.6° / 0.00 / 0 N** |
+| 0.50 | 1.00 / 1.00 / +2.7° / 0.00 / 0 N | 0.97 / 0.98 / +1.4° / 0.00 / 1340 N |
+
+**Use `Go2ValueFilter(trigger="distance", D=0.45)` for 0.18–0.20 m gaps** — the only D window that
+is ≥0.97 at both widths with feet-only landings. The value trigger does not cross with this arm at
+narrow gaps (best 0.16 at ε=−0.5). The alternate `w30` arm with `eps=0.25` reaches only 0.84 / 0.75
+at nominal gains and lands nose-down (mean −6.5°); its ~100% in sys1-sys2 relied on 2× PD gains.
+Crossing mode here is a shallow low leap (base loft ~0.34–0.40 m), not a tall ballistic jump.
