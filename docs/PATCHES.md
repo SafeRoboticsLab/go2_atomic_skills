@@ -90,6 +90,32 @@ must reapply the 3.0** or you get exactly the march-in-place failure.
    inherits fix #1 too).
 
 ## Version history
+- **0.4.0** — the **handover-range finetuned reach-avoid arm** becomes the DEFAULT
+  jump (`hando_w30`): a gap-0.30 reach-avoid arm, 100M-step finetune on real
+  walker-handover states (warm-started lineage), extracted bit-for-bit
+  (`max|Δa| = 0`, `max|ΔV| = 0`) into `jump_{actor,critic,norm}_hando_w30.pt`.
+  `JumpSkill` / `Go2Skills` / `Go2ValueFilter` default to it; the from-scratch
+  reverse-curriculum width ladder (`w30`/`w20`/`w12`) stays selectable via
+  `width=`/`jump_width=`. Bridge + net parity vs the source twin: single-frame
+  obs `2.98e-8`, feed-forward actor/critic+normalizer `|Δa| 1.1e-6 / |ΔV| 1.8e-6`,
+  closed-loop every term `<1e-7` except the env-randomized gait phase (which the
+  package's clock owns). The `fake_gap_scan` override reproduces the arm's V and
+  action from a real height-field gap with **100% V-sign agreement across the
+  0.3-0.6 m deployment band** (gap 0.20 and 0.30). Adds a **`trigger`** option to
+  `Go2ValueFilter`: `"value"` (canonical `V(s) <= eps`) or `"distance"` (engage
+  at a decision LINE `dist_to_gap <= D`, default `D=0.40` — the arm's validated
+  deployment mode; the gap distance is known under the fake-gap override and
+  estimated from the scan's first forward drop-off otherwise). See
+  `docs/VALUE_FILTER.md` for the recommended `eps`/`D` and the landing table.
+  **Action-clamp clarification (supersedes the 0.4.0rc0 note):** the source has
+  two action paths — the raw training rollout (`base.py` step_tensor,
+  `ctrl = action*ctrl_gain`, NO clamp) and the eval/deployment safety-FILTER
+  (`eval.policies.safety_modules` `fallback_fn`, which CLAMPS the arm action to
+  [-1,1] before the gain). The validated composed result was measured under the
+  clamped filter path, and `validate_value_filter` matches it (`|ΔV| 1.07e-6`)
+  only with clamping — so the shipped jump arm **clamps** (`clip_action=True`,
+  the default, same effective control law as ≤0.3.0). `clip_action=False`
+  reproduces the unclamped rollout path and is kept only as an A/B knob.
 - **0.3.0** — adds the reach-avoid **critic `V(s)`** and the **value filter**. The
   gap arm now ships its state-value head (`jump_critic_{w30,w20,w12}.pt`, extracted
   bit-for-bit: `max|ΔV| = 0` vs the source `predict_values`), a `load_critic` in

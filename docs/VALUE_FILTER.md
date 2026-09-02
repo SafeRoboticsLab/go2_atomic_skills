@@ -104,3 +104,79 @@ low rear-leg/belly scramble (it was trained belly-allowed; a clean clear needs
 means *did not fall in the gap*, not *cleared it cleanly*. Full data and the
 reason there is no clean-landing variant in the package are in
 [`docs/JUMP_TRIGGER.md`](JUMP_TRIGGER.md) §6.
+
+---
+
+## 0.4.0 — the default arm, the trigger option, and recommended settings
+
+Since **0.4.0** the default jump is the **handover-range finetuned reach-avoid
+arm** (`hando_w30`; gap 0.30, finetuned on real walker-handover states). It ships
+with the same critic/value-filter machinery. Two things changed for deployment:
+a **`trigger`** knob, and a per-arm recommended setting.
+
+### `trigger="value"` vs `trigger="distance"`
+
+```python
+# E098 (default arm) — recommended deployment mode:
+filt = Go2ValueFilter(device="cpu", trigger="distance", D=0.40)
+# canonical value filter (calibrated for the w30 alternate):
+filt = Go2ValueFilter(device="cpu", jump_width="w30", trigger="value", eps=0.25)
+```
+
+- **`value`** — the canonical least-restrictive filter: engage when `V(s) <= eps`.
+- **`distance`** — engage at a decision LINE: when the distance to the gap's near
+  edge is `<= D` (default `D=0.40`). This is the **validated deployment mode** for
+  the handover arm (a single irrevocable jump/brake choice at the last brakeable
+  point). The gap distance is known under the `fake_gap_scan` override (passed as
+  `dist_to_gap`); with a real scan it is estimated from the first forward
+  drop-off column (`Go2ValueFilter.dist_to_gap_from_scan`). Both modes always
+  report `V` in `info`.
+
+### Recommended settings (from the 0.4.0 sweep, N=32/cell)
+
+| arm | recommended | why |
+|---|---|---|
+| **`hando_w30` (default, E098)** | **`trigger="distance", D=0.40`** | its `V` is more pessimistic than w30's, so the w30-tuned `eps` engages 0.6–1.4 m out and destabilizes; the distance line engages at the brakeable point and lands cleanly. |
+| `w30` (E040b alternate) | `trigger="value", eps=0.25` (or `distance, D=0.30`) | the `eps=0.25` table below was tuned for this arm. |
+
+**Do not** run the default arm with `trigger="value", eps=0.25`: that `eps` was
+tuned for `w30` and, on the more-pessimistic handover critic, engages far too
+early (the arm walks the whole approach under jump control and topples).
+
+### Landing posture — the head-dive metric (FAKE override, flat ground, N=32)
+
+Pitch sign: **`+` = nose up, `−` = nose down (dive)**. "head/trunk-first" =
+fraction of crossings where a trunk/nose collision geom contacts the ground.
+
+| arm · trigger | crossing | landing pitch mean / p90 | head/trunk-first |
+|---|---|---|---|
+| **`hando_w30` · distance D=0.40** | **0.72** | **+2.0° / +2.6°  (nose-up)** | **0.00** |
+| `hando_w30` · distance D=0.30 | 0.56 | +2.4° / +3.2° | 0.00 |
+| `w30` · value eps=0.25 | 0.84 | −8.2° / −5.6°  (nose-down) | 0.00 |
+| `w30` · distance D=0.30 | 0.81 | −1.6° / −0.4° | 0.00 |
+
+The handover arm lands **nose-up**; the old `w30` arm lands **nose-down** — the
+head-dive symptom. Switching the default to `hando_w30` (and using the distance
+trigger) is what removes the dive; it is a property of the arm, not the control
+law.
+
+### Real height-field gap at ~0.9 m/s (REAL mode, N=32)
+
+Deployed as a live filter over the blind ~0.9 m/s walker, a **real** 0.30 m gap
+is momentum-marginal for both arms — a clean clear needs the ~2.5 m/s launch the
+walker cannot supply (see `docs/JUMP_TRIGGER.md` §6). The difference is the
+FAILURE mode: the handover arm **refuses** (brakes/topples short; fall-INTO-gap
+0.06–0.09) rather than committing and dropping in like `w30` (fall-in 0.69–0.84).
+Refusing an uncrossable gap is the "avoid" half of reach-avoid working as
+intended — the safer outcome.
+
+### Faithfulness + parity (0.4.0)
+
+- `validate_value_filter.py`: worst `|V_pkg − V_harness| = 1.07e-6`, engage mask
+  exact (0/960) — matches the source value filter (the **clamped** deployment
+  path; see `PATCHES.md` on the two action paths).
+- `parity_hando_bridge.py`: single-frame bridge `2.98e-8`; feed-forward
+  actor/critic `|Δa| 1.1e-6 / |ΔV| 1.8e-6`; closed-loop every term `<1e-7` except
+  the env-randomized gait phase (the package owns its clock).
+- `parity_hando_fakegap.py`: the `fake_gap_scan` override reproduces V and action
+  from a real gap with **100% V-sign agreement across 0.3–0.6 m** (gap 0.20/0.30).

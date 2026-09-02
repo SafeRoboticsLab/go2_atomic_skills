@@ -152,3 +152,39 @@ only ~1.5 m/s, the gate fires <half the time, and the base still sinks to ~0.25 
 so shipping it would add two policies and a handover state machine for zero
 improvement. It becomes worthwhile only if your robot can hit ~2.5 m/s at the
 edge; if that ever becomes true for your platform, ask and it can be added.
+
+## 7. The fake-gap override validated for the default (handover) arm (0.4.0)
+
+Since **0.4.0** the default arm is the handover-range finetuned reach-avoid arm
+(`hando_w30`). The `fake_gap_scan` override was re-checked against a REAL
+height-field gap for this arm: for a physical state at a known distance, the
+arm's `V(s)` and mean action on the synthetic scan were compared to the arm on a
+real raycast of the same state (gap 0.20 and 0.30).
+
+- **V-sign agreement is 100% across the 0.3–0.6 m deployment band** (both gap
+  widths): the override drives the same jump/refuse decision the real gap would.
+- Where the synthetic and real scans coincide (a grid cell not straddling the gap
+  edge) `|ΔV| < 0.05` and `|Δa| < 0.05`; the scattered larger `|ΔV|` rows are the
+  one grid column that flips at the gap boundary (an arm-independent quantization
+  of `fake_gap_scan` vs the real geometry, `scan|Δ| = 1.0`).
+- The only sign flip is at ~0.70 m — outside the deployment band, at the scan's
+  forward-reach edge, where the real gap is barely visible and the arm correctly
+  reads near-flat.
+
+So `fake_gap_scan` remains a faithful way to invoke (or refuse) the handover arm.
+
+**Distance trigger.** The handover arm's validated deployment mode is a decision
+LINE, not a V-threshold: hand over when the gap is `<= D` m ahead (default
+`D=0.40`). Under the override the distance is known and passed directly; with a
+real scan it is estimated from the first forward drop-off column. See
+`docs/VALUE_FILTER.md` — for `hando_w30`, `trigger="distance", D=0.40` gives the
+cleanest crossings (nose-up landing, zero head/trunk-first contact) whereas the
+w30-tuned value threshold engages this arm too early.
+
+## 8. Which arm
+
+`Go2Skills(jump_width="hando_w30" | "w30" | "w20" | "w12")` /
+`JumpSkill(width=...)` select the arm. **`hando_w30`** (the handover-range
+finetuned 0.30 m arm) is the **default** and the recommended deployment arm;
+`w30`/`w20`/`w12` are the from-scratch reverse-curriculum width ladder (0.30 /
+0.20 / 0.12 m), kept as selectable alternates.

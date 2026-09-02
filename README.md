@@ -13,7 +13,7 @@ back joint targets — no `mjlab`, no `safety_sb3` at runtime (only `numpy`,
 | Skill | Class | Obs | Policy | What it does |
 |------|-------|-----|--------|--------------|
 | **Walk** | `WalkSkill` | 47-d single frame | stock SB3 PPO | joystick velocity walker (`vx, vy, ωz`) |
-| **Jump** | `JumpSkill` | 1175-d (235 × 5 history) | `ReachAvoidPPO1P` | reach-avoid gap-jumping arm (actor **+ critic `V(s)`**) |
+| **Jump** | `JumpSkill` | 1175-d (235 × 5 history) | `ReachAvoidPPO1P` | reach-avoid gap-jumping arm (actor **+ critic `V(s)`**); default = handover-range finetuned arm (0.4.0) |
 | **Value filter** | `Go2ValueFilter` | both groups | walker + arm's `V(s)` | least-restrictive safety filter: walk until `V(s) ≤ eps`, then jump |
 
 Both were extracted bit-for-bit from the source training runs; the reconstructed
@@ -140,7 +140,10 @@ target = skills.jump(inp, command=(1.0, 0.0, 0.0), height_scan=scan)
 
 Since **0.3.0** the reach-avoid arm ships its **critic `V(s)`** too, so it can wrap
 the blind walker as a **least-restrictive value filter**: apply the walker while
-`V(s) > eps`, hand over to the jump when `V(s) ≤ eps`. `eps` is the only knob
+`V(s) > eps`, hand over to the jump when `V(s) ≤ eps`. Since **0.4.0** the default arm is the **handover-range finetuned** reach-avoid
+arm, whose recommended deployment mode is a decision LINE — `trigger="distance",
+D=0.40` (the `eps` value-threshold below is calibrated for the `w30` alternate).
+`eps` is the value knob
 (`0.0` = the certificate's value-zero boundary; `0.25` = the tuned "shield
 earlier" default for w30; larger = engage sooner). `Go2ValueFilter` owns the
 whole composition — including the **shared applied-last-action** bookkeeping both
@@ -152,7 +155,7 @@ obs groups need (get that wrong by hand and `V` silently drifts). Full detail, t
 from go2_atomic_skills import Go2ValueFilter
 from go2_atomic_skills.mujoco_helper import obs_from_mujoco, raycast_height_scan
 
-filt = Go2ValueFilter(device="cpu", jump_width="w30", eps=0.25)
+filt = Go2ValueFilter(device="cpu", trigger="distance", D=0.40)  # default arm = handover RA (0.4.0)
 filt.reset()
 
 inp  = obs_from_mujoco(mj_model, mj_data)

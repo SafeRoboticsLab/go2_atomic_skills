@@ -31,15 +31,21 @@ def _ctrl(policy_out: np.ndarray, clip: bool = True) -> np.ndarray:
   scales.
 
   ``clip`` controls whether the raw action is clamped to [-1,1] BEFORE the gain.
-  The GAP/JUMP arms were trained + evaluated through the tensor bridge
-  (``robot_safety_sandbox.base`` step_tensor), which applies ``ctrl = action *
-  ctrl_gain`` with **NO clip** — the deterministic policy mean routinely exceeds
-  |1| during an aggressive jump, and the env feeds that UNCLIPPED post-gain
-  value both to the actuators and back into the `actions` observation term. So
-  the jump arm must run unclipped (``clip=False``) to reproduce the trained
-  behaviour (verified: clipping bites at |a|>1 and desyncs V/action). The stock
-  SB3 walker (numpy VecEnv path) is stepped with SB3's own pre-step action-space
-  clip, so it keeps ``clip=True``."""
+  There are two action-processing paths in the SOURCE, and the DEPLOYMENT one is
+  what this package reproduces:
+    * The eval/deployment safety-FILTER path (``eval.policies.safety_modules``
+      ``fallback_fn``) applies ``clamp(policy._predict, -1, 1)`` before the gain
+      — so the arm engaged as a value filter feeds CLAMPED post-gain actions.
+      This is what the validated composed result (E098) was measured under, and
+      what the package's ``validate_value_filter`` faithfulness gate matches
+      (worst |ΔV| back to ~1e-6 with clip=True). Hence the jump arm CLAMPS.
+    * The raw training rollout (``base.py`` step_tensor) applies
+      ``ctrl = action * ctrl_gain`` with no clamp, so a direct env.step with the
+      raw policy mean stores an UNCLIPPED actions term. That path is reproduced
+      by ``clip=False`` and kept only as an A/B knob — it is NOT the deployment
+      target and desyncs from the validated filter (|ΔV|~0.2).
+  The stock SB3 walker (numpy VecEnv path) clamps for the same reason SB3 does
+  before stepping."""
   a = np.clip(policy_out, -1.0, 1.0) if clip else policy_out
   return (CTRL_GAIN * a).astype(np.float32)
 
@@ -92,9 +98,15 @@ class JumpSkill:
   actor."""
 
   def __init__(self, device: str = "cpu", width: str = "hando_w30",
-               with_critic: bool = False):
+               with_critic: bool = False, clip_action: bool = True):
     self.device = device
     self.width = width
+    # The deployment safety-filter path clamps the arm action to [-1,1] before
+    # the ctrl_gain (eval.policies.safety_modules), and that is the convention
+    # the validated composed result was measured under — so clip_action=True by
+    # default. clip_action=False reproduces the raw (unclamped) training-rollout
+    # path and is an A/B knob only; see _ctrl.
+    self.clip_action = bool(clip_action)
     self.net = load_actor(f"jump_actor_{width}.pt", 1175, device)
     self.norm = JumpNorm(width, device)
     self.critic = (load_critic(f"jump_critic_{width}.pt", 1175, device)
@@ -124,7 +136,7 @@ class JumpSkill:
     o = self.norm(torch.as_tensor(obs, device=self.device).unsqueeze(0))
     with torch.no_grad():
       a = self.net(o).squeeze(0).cpu().numpy()
-    ctrl = _ctrl(a, clip=False)          # jump arm: UNCLIPPED post-gain (tensor-bridge fidelity)
+    ctrl = _ctrl(a, clip=self.clip_action)   # jump arm: deployment-filter clamp (clip_action, default True)
     self.last_action = ctrl
     self.step += 1
     return _target(ctrl)
@@ -152,7 +164,7 @@ class JumpSkill:
     with torch.no_grad():
       a = self.net(o).squeeze(0).cpu().numpy()
       v = float(self.critic(o).squeeze(-1).cpu().item())
-    ctrl = _ctrl(a, clip=False)          # jump arm: UNCLIPPED post-gain (tensor-bridge fidelity)
+    ctrl = _ctrl(a, clip=self.clip_action)   # jump arm: deployment-filter clamp (clip_action, default True)
     self.last_action = ctrl
     self.step += 1
     return v, ctrl
@@ -214,34 +226,83 @@ class Go2ValueFilter:
   this wrong silently corrupts V; see ``validation/validate_value_filter.py``.
   """
 
+  TRIGGERS = ("value", "distance")
+
   def __init__(self, device: str = "cpu", jump_width: str = "hando_w30",
-               eps: float = 0.25):
+               eps: float = 0.25, trigger: str = "value", D: float = 0.40,
+               clip_action: bool = True):
     self.device = device
     self.eps = float(eps)
+    if trigger not in self.TRIGGERS:
+      raise ValueError(f"trigger must be one of {self.TRIGGERS}, got {trigger!r}")
+    self.trigger = trigger
+    self.D = float(D)
     self.walk_skill = WalkSkill(device)
-    self.jump_skill = JumpSkill(device, width=jump_width, with_critic=True)
+    self.jump_skill = JumpSkill(device, width=jump_width, with_critic=True,
+                               clip_action=clip_action)
 
   def reset(self):
     self.walk_skill.reset()
     self.jump_skill.reset()
 
+  @staticmethod
+  def dist_to_gap_from_scan(height_scan: np.ndarray, base_z: float,
+                            drop_threshold: float = 0.7) -> float:
+    """Estimate distance to the near edge of a forward gap from the raw 187-ray
+    scan: the smallest FORWARD x-offset (high-ix column, y-center rows) whose
+    drop (scan value - base_z) exceeds ``drop_threshold`` (the training gap
+    definition). Returns ``inf`` if no forward drop is visible. Used by the
+    distance-trigger when no explicit ``dist_to_gap`` is supplied."""
+    from .obs import SCAN_NX, SCAN_NY, SCAN_X
+    scan = np.asarray(height_scan, dtype=np.float32).reshape(SCAN_NY, SCAN_NX)
+    cy = SCAN_NY // 2
+    rows = scan[max(cy - 1, 0):cy + 2, :]          # 3 center y-rows, robust
+    drop = rows - float(base_z)
+    for ix in range(SCAN_NX):
+      if SCAN_X[ix] > 0 and bool((drop[:, ix] > drop_threshold).any()):
+        return float(SCAN_X[ix])
+    return float("inf")
+
   def step(self, inp: ObsInputs, command=(1.0, 0.0, 0.0),
-           height_scan: np.ndarray | None = None, eps: float | None = None):
+           height_scan: np.ndarray | None = None, eps: float | None = None,
+           trigger: str | None = None, D: float | None = None,
+           dist_to_gap: float | None = None):
     """One filtered control step. Returns ``(target, info)`` where ``target`` is
     the 12 joint position targets (mjlab order) and ``info`` carries
-    ``{"value": float, "engaged": bool, "eps": float}``. ``height_scan`` is the
-    raw 187 ray heights (base_z - hit_z, miss -> 5.0); None synthesizes flat
-    ground (no gap -> the arm holds and the walker passes through)."""
+    ``{"value", "engaged", "eps", "trigger", "dist_to_gap"}``. ``height_scan``
+    is the raw 187 ray heights (base_z - hit_z, miss -> 5.0); None synthesizes
+    flat ground (no gap -> the arm holds, the walker passes through).
+
+    Two engage modes:
+      * ``trigger="value"``    — canonical least-restrictive filter: engage when
+        ``V(s) <= eps``.
+      * ``trigger="distance"`` — engage when distance to the gap's near edge is
+        ``<= D`` (a decision LINE at the last brakeable point — E098's validated
+        deployment mode). ``dist_to_gap`` may be passed explicitly (trivial with
+        the fake-gap override, where it is known); otherwise it is estimated
+        from the scan's first forward drop-off column.
+    Both modes always evaluate V (reported in ``info``); only the engage test
+    differs."""
     eps = self.eps if eps is None else float(eps)
+    trigger = self.trigger if trigger is None else trigger
+    D = self.D if D is None else float(D)
     # nominal (walker) post-gain ctrl; discard its target, keep the ctrl.
     self.walk_skill.act(inp, command)
     a_nom = self.walk_skill.last_action
     # certificate value + the jump's fallback ctrl, one history/phase advance.
     v, jump_ctrl = self.jump_skill.value_and_action(inp, command, height_scan)
-    engaged = v <= eps
+    if trigger == "distance":
+      if dist_to_gap is None:
+        scan = height_scan if height_scan is not None else flat_ground_scan(inp.base_z)
+        dist_to_gap = self.dist_to_gap_from_scan(scan, inp.base_z)
+      engaged = dist_to_gap <= D
+    else:
+      dist_to_gap = float("nan") if dist_to_gap is None else dist_to_gap
+      engaged = v <= eps
     applied_ctrl = jump_ctrl if engaged else a_nom
     # SHARED applied last_action into BOTH groups (see the deployment contract).
     self.walk_skill.last_action = applied_ctrl
     self.jump_skill.last_action = applied_ctrl
     target = _target(applied_ctrl)
-    return target, {"value": float(v), "engaged": bool(engaged), "eps": eps}
+    return target, {"value": float(v), "engaged": bool(engaged), "eps": eps,
+                    "trigger": trigger, "dist_to_gap": float(dist_to_gap)}
