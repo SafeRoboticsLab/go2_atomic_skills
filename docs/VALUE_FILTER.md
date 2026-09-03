@@ -197,3 +197,37 @@ is ≥0.97 at both widths with feet-only landings. The value trigger does not cr
 narrow gaps (best 0.16 at ε=−0.5). The alternate `w30` arm with `eps=0.25` reaches only 0.84 / 0.75
 at nominal gains and lands nose-down (mean −6.5°); its ~100% in sys1-sys2 relied on 2× PD gains.
 Crossing mode here is a shallow low leap (base loft ~0.34–0.40 m), not a tall ballistic jump.
+
+## Per-gap D schedule + high-friction backflip mitigation — measured 2026-09-02 (T027)
+
+Deployed path (`Go2ValueFilter` distance-trigger, `clip_action=True`, nominal gains), default arm
+`hando_w30`, walker cmd 1.0, N=64/cell. Two findings that together make the shipped arm cross
+cleanly without the anchored-front backflip Buzi observed on hardware:
+
+### 1. The safe distance-trigger D is gap-specific (the bands are DISJOINT)
+
+D bands holding crossing ≥0.85 with backflip ≤0.02 and forward-topple ≤0.05:
+
+| gap | safe D band | notes |
+|---|---|---|
+| **0.30 m** | **D ∈ [0.38, 0.42]** (both modes) | HARD cliff at D=0.45: real crossing 0.98→0.28, backflip 0.00→0.34 |
+| **0.20 m** | **D ∈ [0.45, 0.50]** (real-mode binding) | below 0.45 real fails on forward-topple; above 0.50 crossing collapses |
+
+There is **no single D** that cleanly clears both gaps at cmd 1.0. Use a **per-gap D schedule**:
+**gap 0.30 → D ≈ 0.40; gap 0.20 → D ≈ 0.45–0.48.** (The prior narrow-gap section's D=0.45 remains
+correct for 0.18–0.20 m; this adds the wider-gap setpoint.)
+
+### 2. The high-friction (μ≈2) backflip is an ANCHORED-FRONT-FOOT effect — fix it in hardware
+
+On a high-friction floor the planted front feet anchor and the rear push-off pitches the robot
+backward (the E165 mechanism). Measured mitigation: **asymmetric foot friction — low-friction FRONT
+feet (μ≈0.5) with normal REAR feet — ELIMINATES the backflip** (7/8 μ2 cells → backflip ≤0.02,
+crossing improves in all 8; e.g. real gap 0.20 / D0.45: backflip 0.078 → **0.000**, crossing
+0.719 → **0.922**), because a low-friction front foot cannot anchor to provide the flip pivot.
+
+**Hardware recommendation:** fit **low-friction caps/material on the FRONT feet only** (leave the rear
+feet grippy for push-off) when operating on high-friction floors. This is a zero-training mitigation,
+complementary to the per-gap D schedule (friction removes the flip; D preserves the crossing).
+
+Provenance: T027 deployed-path probes (`e169_deployed_grid.py` / `e169_asym_fric.py`, validated
+against E165); tables under `robot-safety-sandbox/T027-sim2real-finetune/E169-deployed-path/`.
