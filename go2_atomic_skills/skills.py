@@ -20,9 +20,9 @@ import numpy as np
 import torch
 
 from .nets import JumpNorm, WalkerNorm, load_actor, load_critic
-from .obs import (ACTION_SCALE, CTRL_GAIN, DEFAULT_JOINT_POS, JUMP_FRAME_DIM,
-                  SCAN_N, HistoryBuffer, ObsInputs, build_jump_frame,
-                  build_walker_obs)
+from .obs import (ACTION_SCALE, CONTROL_DT, CTRL_GAIN, DEFAULT_JOINT_POS,
+                  JUMP_FRAME_DIM, SCAN_N, HistoryBuffer, ObsInputs,
+                  build_jump_frame, build_walker_obs)
 
 
 def _ctrl(policy_out: np.ndarray, clip: bool = True) -> np.ndarray:
@@ -212,11 +212,46 @@ class Go2ValueFilter:
       apply the walker action   iff  V(s) >  eps
       else apply the jump action (hand authority to the certified fallback)
 
-  So the arm engages when ``V(s) <= eps``. ``eps`` is the ONLY knob: 0.0 is the
-  value-zero level (the certificate's own safe-set boundary); 0.25 is the tuned
-  "shield earlier" value for the w30 arm; a larger eps engages the jump earlier
-  / more conservatively. There is no latch, hysteresis, rest gate, or median
-  smoothing here — that is a different, non-canonical variant.
+  So the arm engages when ``V(s) <= eps``. ``eps`` is the ONLY knob for the
+  canonical rule: 0.0 is the value-zero level (the certificate's own safe-set
+  boundary); 0.25 is the tuned "shield earlier" value for the w30 arm; a larger
+  eps engages the jump earlier / more conservatively.
+
+  LANDING LATCH (opt-in, ``landing_latch``; default OFF -> byte-identical to the
+  memoryless rule above). The memoryless switch is correct for BRAKING but wrong
+  at the LANDING handover: once the robot is over/past the gap the trigger
+  releases (distance -> the scan sees no forward drop so ``dist_to_gap -> inf``;
+  value -> ``V(s) > eps`` again mid-flight), so authority snaps back to the
+  WALKER *at or before touchdown* — a controller that has never seen the landing
+  pose, still commanded 1.0 m/s forward — which head-dives / anchored-front flips
+  (measured: jump-kept survival ~0.93 vs stay/walker handover 0.17/0.38 within
+  1 s). The latch removes that failure mode: when the trigger first engages the
+  jump it LATCHES ``engaged=True`` and holds it through flight AND landing, with
+  the jump kept at its REQUESTED command the whole time (never zeroed — a zeroed
+  command is OOD for an arm trained under a constant command and causes a
+  backward creep into the gap). It releases to the walker per ``release``:
+    * ``release="settle"`` — release once the settled-stand criterion has held
+      CONTINUOUSLY for ``settle_time_s``. Precise, but can fail to fire if the
+      stand creeps (never continuously "settled").
+    * ``release="timed"``  — release at a fixed ``release_delay_s`` AFTER
+      touchdown, no velocity gate (the sandbox composition's ≥0.90 20-s-survival
+      mode: keep the arm through landing, hand over 0.5-1.0 s after touchdown).
+      Touchdown = first foot contact after airborne if ``foot_contacts`` are on
+      the obs, else the base-height upturn (falling -> not-falling) after descent.
+  On release the WALKER's command is ramped 0 -> requested over ``release_ramp_s``
+  so the walker does not lurch off a fresh stand. The latch is NOT the canonical
+  least-restrictive filter (it is deliberately more restrictive on the release
+  side); use OFF for the certificate study, ON for a deployed jump-then-recover
+  skill.
+
+  Settled-stand criterion (per step, evaluated only while latched):
+    * if per-foot contact inputs are present on the obs (``foot_contacts``, an
+      attribute hardware can supply) -> all four feet loaded AND upright;
+    * else -> upright (projected-gravity z <= ``-settle_upright``) AND slow:
+      base planar speed <= ``settle_speed`` if a base linear velocity is present
+      on the obs (``base_lin_vel``), otherwise the joint-velocity norm below
+      ``settle_jointvel`` (the hardware-agnostic fallback, since the shipped
+      ``ObsInputs`` carries neither foot contact nor base velocity).
 
   DEPLOYMENT CONTRACT (the switching-filter gotcha this class handles for you):
   the env computes BOTH obs groups from the current sim state, and the
@@ -228,22 +263,98 @@ class Go2ValueFilter:
 
   TRIGGERS = ("value", "distance")
 
+  RELEASES = ("settle", "timed")
+
   def __init__(self, device: str = "cpu", jump_width: str = "hando_w30",
                eps: float = 0.25, trigger: str = "value", D: float = 0.40,
-               clip_action: bool = True):
+               clip_action: bool = True, landing_latch: bool = False,
+               release: str = "settle", settle_time_s: float = 1.0,
+               settle_speed: float = 0.15, settle_upright: float = 0.8,
+               settle_jointvel: float = 4.0, release_delay_s: float = 0.75,
+               release_ramp_s: float = 0.5):
     self.device = device
     self.eps = float(eps)
     if trigger not in self.TRIGGERS:
       raise ValueError(f"trigger must be one of {self.TRIGGERS}, got {trigger!r}")
     self.trigger = trigger
     self.D = float(D)
+    # --- landing-latch config (default OFF -> memoryless 0.4.1 behavior) ---
+    self.landing_latch = bool(landing_latch)
+    if release not in self.RELEASES:
+      raise ValueError(f"release must be one of {self.RELEASES}, got {release!r}")
+    self.release = release
+    self.settle_time_s = float(settle_time_s)
+    self.settle_speed = float(settle_speed)
+    self.settle_upright = float(settle_upright)
+    self.settle_jointvel = float(settle_jointvel)
+    self.release_delay_s = float(release_delay_s)
+    self.release_ramp_s = float(release_ramp_s)
     self.walk_skill = WalkSkill(device)
     self.jump_skill = JumpSkill(device, width=jump_width, with_critic=True,
                                clip_action=clip_action)
+    self.reset()
 
   def reset(self):
     self.walk_skill.reset()
     self.jump_skill.reset()
+    # latch state machine
+    self._latched = False          # currently holding the jump past the trigger
+    self._settled_s = 0.0          # continuous settled-stand time (s)
+    self._releasing = False        # in the post-release command ramp
+    self._release_s = 0.0          # time elapsed in the release ramp (s)
+    # touchdown detection (for release="timed")
+    self._prev_base_z = None       # previous base z (finite-diff vertical vel)
+    self._prev_vz = None           # previous vertical velocity estimate
+    self._descended = False        # base has been falling since latch (flight)
+    self._airborne_seen = False    # all feet left the ground (hardware contacts)
+    self._td = False               # touchdown detected
+    self._t_since_td = 0.0         # seconds since touchdown
+
+  def _touchdown_now(self, inp: ObsInputs) -> bool:
+    """Update touchdown state from the obs; return True on the touchdown frame.
+
+    If per-foot contacts are on the obs (``foot_contacts``): touchdown = the
+    first foot contact after an airborne (all-feet-off) phase. Otherwise detect
+    it from the base height: the first upturn of vertical velocity (falling ->
+    not-falling) after the base has been descending, with the base back near
+    stance (a completed landing, not a fall into the gap)."""
+    if self._td:
+      return False
+    fc = getattr(inp, "foot_contacts", None)
+    if fc is not None:
+      any_contact = bool(np.any(np.asarray(fc, dtype=np.float32) > 0.5))
+      if not any_contact:
+        self._airborne_seen = True
+      if self._airborne_seen and any_contact:
+        self._td = True
+      return self._td
+    # base-height fallback (no foot contacts on the shipped ObsInputs)
+    bz = float(inp.base_z)
+    if self._prev_base_z is not None:
+      vz = (bz - self._prev_base_z) / CONTROL_DT
+      if vz < -0.15:
+        self._descended = True
+      if (self._descended and self._prev_vz is not None
+          and self._prev_vz < 0.0 and vz >= 0.0 and bz > 0.18):
+        self._td = True
+      self._prev_vz = vz
+    self._prev_base_z = bz
+    return self._td
+
+  def _settled_now(self, inp: ObsInputs, settle_speed: float,
+                   settle_upright: float, settle_jointvel: float) -> bool:
+    """Settled-stand test for the landing latch (see the class docstring)."""
+    upright = float(inp.proj_grav()[2]) <= -float(settle_upright)
+    fc = getattr(inp, "foot_contacts", None)
+    if fc is not None:                              # hardware per-foot contacts
+      all_loaded = bool(np.all(np.asarray(fc, dtype=np.float32) > 0.5))
+      return bool(all_loaded and upright)
+    blv = getattr(inp, "base_lin_vel", None)
+    if blv is not None:                             # base linear velocity present
+      slow = float(np.linalg.norm(np.asarray(blv, dtype=np.float32)[:2])) <= float(settle_speed)
+    else:                                           # hardware-agnostic fallback
+      slow = float(np.linalg.norm(np.asarray(inp.joint_vel, dtype=np.float32))) <= float(settle_jointvel)
+    return bool(upright and slow)
 
   @staticmethod
   def dist_to_gap_from_scan(height_scan: np.ndarray, base_z: float,
@@ -266,12 +377,14 @@ class Go2ValueFilter:
   def step(self, inp: ObsInputs, command=(1.0, 0.0, 0.0),
            height_scan: np.ndarray | None = None, eps: float | None = None,
            trigger: str | None = None, D: float | None = None,
-           dist_to_gap: float | None = None):
+           dist_to_gap: float | None = None, landing_latch: bool | None = None,
+           release: str | None = None):
     """One filtered control step. Returns ``(target, info)`` where ``target`` is
     the 12 joint position targets (mjlab order) and ``info`` carries
-    ``{"value", "engaged", "eps", "trigger", "dist_to_gap"}``. ``height_scan``
-    is the raw 187 ray heights (base_z - hit_z, miss -> 5.0); None synthesizes
-    flat ground (no gap -> the arm holds, the walker passes through).
+    ``{"value", "engaged", "eps", "trigger", "dist_to_gap", "latched",
+    "settled_for_s", "cmd_applied", "touchdown", "t_since_td", "release"}``.
+    ``height_scan`` is the raw 187 ray heights (base_z - hit_z, miss -> 5.0);
+    None synthesizes flat ground (no gap -> the arm holds, the walker passes).
 
     Two engage modes:
       * ``trigger="value"``    — canonical least-restrictive filter: engage when
@@ -282,27 +395,100 @@ class Go2ValueFilter:
         the fake-gap override, where it is known); otherwise it is estimated
         from the scan's first forward drop-off column.
     Both modes always evaluate V (reported in ``info``); only the engage test
-    differs."""
+    differs.
+
+    ``landing_latch`` (None -> the instance default): when True the raw engage
+    above becomes a LATCH — once the jump engages it stays engaged through flight
+    AND landing (the jump keeps its requested command the whole time; the command
+    is NEVER zeroed on the arm, which is OOD for an arm trained under a constant
+    command), and releases to the walker per ``release``:
+      * ``release="settle"`` — release once the settled-stand criterion holds
+        continuously for ``settle_time_s``. Can fail to fire if the stand creeps.
+      * ``release="timed"``  — release at a fixed ``release_delay_s`` AFTER
+        touchdown (no velocity gate; the sandbox composition's ≥0.90-survival
+        mode). Touchdown is detected from foot contacts if present, else from the
+        base-height upturn after descent.
+    On release the WALKER's command is ramped 0 -> requested over
+    ``release_ramp_s``. See the class docstring."""
     eps = self.eps if eps is None else float(eps)
     trigger = self.trigger if trigger is None else trigger
     D = self.D if D is None else float(D)
-    # nominal (walker) post-gain ctrl; discard its target, keep the ctrl.
-    self.walk_skill.act(inp, command)
-    a_nom = self.walk_skill.last_action
+    latch = self.landing_latch if landing_latch is None else bool(landing_latch)
+    release = self.release if release is None else release
+    if release not in self.RELEASES:
+      raise ValueError(f"release must be one of {self.RELEASES}, got {release!r}")
+
     # certificate value + the jump's fallback ctrl, one history/phase advance.
     v, jump_ctrl = self.jump_skill.value_and_action(inp, command, height_scan)
+    # raw (memoryless) trigger — always the engage test the canonical filter uses.
     if trigger == "distance":
       if dist_to_gap is None:
         scan = height_scan if height_scan is not None else flat_ground_scan(inp.base_z)
         dist_to_gap = self.dist_to_gap_from_scan(scan, inp.base_z)
-      engaged = dist_to_gap <= D
+      raw_engaged = dist_to_gap <= D
     else:
       dist_to_gap = float("nan") if dist_to_gap is None else dist_to_gap
-      engaged = v <= eps
+      raw_engaged = v <= eps
+
+    # --- latch state machine (no-op when latch is OFF) ------------------------
+    ramp_frac = 1.0
+    if not latch:
+      engaged = bool(raw_engaged)
+    else:
+      if raw_engaged and not self._latched:         # first engage -> latch on
+        self._latched = True
+        self._settled_s = 0.0
+        self._releasing = False
+      if self._latched:
+        # settle bookkeeping (always tracked; drives release only in settle mode)
+        if self._settled_now(inp, self.settle_speed, self.settle_upright,
+                             self.settle_jointvel):
+          self._settled_s += CONTROL_DT
+        else:
+          self._settled_s = 0.0
+        # touchdown bookkeeping (drives release only in timed mode)
+        self._touchdown_now(inp)
+        if self._td:
+          self._t_since_td += CONTROL_DT
+        if release == "timed":
+          do_release = self._td and self._t_since_td >= self.release_delay_s
+        else:                                         # "settle"
+          do_release = self._settled_s >= self.settle_time_s
+        if do_release:
+          self._latched = False
+          self._releasing = True
+          self._release_s = 0.0
+        engaged = self._latched
+      else:
+        engaged = bool(raw_engaged)                 # not latched: fall back to raw
+      if self._releasing:                           # ramp the handed-back command
+        if self.release_ramp_s > 0.0:
+          ramp_frac = min(self._release_s / self.release_ramp_s, 1.0)
+        else:
+          ramp_frac = 1.0
+        self._release_s += CONTROL_DT
+        if ramp_frac >= 1.0:
+          self._releasing = False
+
+    # walker command for this step: full command unless ramping back after release.
+    if ramp_frac >= 1.0:
+      cmd_walk = command                            # unchanged -> byte-identical
+    else:
+      cmd_walk = tuple(float(c) * ramp_frac for c in np.asarray(command, dtype=np.float32))
+    # nominal (walker) post-gain ctrl; discard its target, keep the ctrl.
+    self.walk_skill.act(inp, cmd_walk)
+    a_nom = self.walk_skill.last_action
+
     applied_ctrl = jump_ctrl if engaged else a_nom
+    cmd_applied = tuple(np.asarray(command if engaged else cmd_walk, dtype=np.float32))
     # SHARED applied last_action into BOTH groups (see the deployment contract).
     self.walk_skill.last_action = applied_ctrl
     self.jump_skill.last_action = applied_ctrl
     target = _target(applied_ctrl)
     return target, {"value": float(v), "engaged": bool(engaged), "eps": eps,
-                    "trigger": trigger, "dist_to_gap": float(dist_to_gap)}
+                    "trigger": trigger, "dist_to_gap": float(dist_to_gap),
+                    "latched": bool(self._latched),
+                    "settled_for_s": float(self._settled_s),
+                    "cmd_applied": cmd_applied, "release": release,
+                    "touchdown": bool(self._td),
+                    "t_since_td": float(self._t_since_td)}

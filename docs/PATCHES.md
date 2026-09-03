@@ -93,6 +93,42 @@ unbounded torque, so any package-sim validation is optimistic); integrator
    inherits fix #1 too).
 
 ## Version history
+- **0.4.2** — **landing latch** on `Go2ValueFilter` (opt-in, `landing_latch=False`
+  by default → 0.4.1 behavior byte-identical). The 0.4.0/0.4.1 filter is a
+  MEMORYLESS per-step switch: with `trigger="distance"` it engages the jump only
+  while `dist_to_gap ≤ D`, so once the robot is over/past the gap the forward
+  scan shows no drop (`dist_to_gap → inf`) and authority snaps back to the WALKER
+  *at or before touchdown* — a controller that never saw the landing pose, still
+  commanded forward → the head-dive / anchored-front flip seen on hardware and in
+  sim (jump-kept survival ~0.93 vs stay/walker handover 0.17/0.38 within 1 s;
+  measured T028/E205). `trigger="value"` fails the same way (V > eps again
+  mid-flight). The latch fixes the LANDING handover only (braking is unchanged):
+  when the trigger first engages the jump it latches `engaged=True` and holds it
+  through flight AND landing, with the jump kept at its REQUESTED command the whole
+  time (never zeroed — a zeroed command is OOD for an arm trained under a constant
+  command and causes a backward creep into the gap). Two release modes (`release=`):
+  `"settle"` (default) releases after a settled-stand criterion holds CONTINUOUSLY
+  for `settle_time_s` (precise; can fail to fire if the stand creeps); `"timed"`
+  releases at a fixed `release_delay_s` (default 0.75) AFTER touchdown with no
+  velocity gate (the sandbox composition's ≥0.90 20-s-survival mode) — touchdown =
+  first foot contact after airborne (`foot_contacts` on the obs) else the
+  base-height upturn (falling→not-falling) after descent. On release the WALKER's
+  forward command is ramped 0→requested over `release_ramp_s` so it does not lurch
+  off a fresh stand. Params (constructor + per-step `landing_latch`/`release`
+  overrides): `settle_time_s=1.0`, `settle_speed=0.15` (base planar speed if the
+  obs carries `base_lin_vel`), `settle_upright=0.8` (projected-gravity z),
+  `settle_jointvel=4.0` (joint-velocity-norm fallback, since the shipped
+  `ObsInputs` has neither foot contact nor base velocity), `release_delay_s=0.75`,
+  `release_ramp_s=0.5`. Settled = all feet loaded (if `foot_contacts` present) else
+  upright + slow. `info` gains `latched`, `settled_for_s`, `cmd_applied`,
+  `touchdown`, `t_since_td`, `release`. The shared applied-last-action deployment
+  contract is unchanged. Gate `validation/validate_landing_latch.py` (recorded
+  approach→flight→settle sequence): OFF reproduces 0.4.1 **step-for-step** (worst
+  |Δtarget| = 0, |ΔV| = 0, engage/dist mask 0/130 mismatches); ON (both release
+  modes) stays engaged through the
+  whole post-gap window the memoryless filter abandons and releases exactly at
+  the state machine's predicted settled step. Everything else byte-identical
+  (walker/jump nets, obs, `V`).
 - **0.4.1** — **actuator effort limits** added to both MuJoCo actuator builders
   (`mujoco_helper.build_go2_mjcf_model` and the sweep's `add_actuators_and_arm`):
   `forcerange` ±23.5 N·m hip/thigh, ±45 N·m calf (`forcelimited` on), behind a
