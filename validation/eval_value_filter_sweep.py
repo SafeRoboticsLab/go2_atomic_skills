@@ -24,7 +24,8 @@ import torch
 torch.set_num_threads(2)
 
 from go2_atomic_skills.obs import DEFAULT_JOINT_POS, MJLAB_JOINT_ORDER
-from go2_atomic_skills.mujoco_helper import (MJCF_PATH, _GAINS, build_go2_mjcf_model,
+from go2_atomic_skills.mujoco_helper import (MJCF_PATH, _EFFORT_LIMITS, _GAINS,
+                                             build_go2_mjcf_model,
                                              fake_gap_scan, obs_from_mujoco,
                                              raycast_height_scan)
 from go2_atomic_skills.skills import Go2ValueFilter
@@ -49,6 +50,8 @@ def add_actuators_and_arm(spec):
     a.gaintype = mujoco.mjtGain.mjGAIN_FIXED
     a.biastype = mujoco.mjtBias.mjBIAS_AFFINE
     a.gainprm[0] = kp; a.biasprm[1] = -kp; a.biasprm[2] = -kv
+    a.forcelimited = mujoco.mjtLimited.mjLIMITED_TRUE
+    lim = _EFFORT_LIMITS[grp]; a.forcerange[0] = -lim; a.forcerange[1] = lim
 
 
 def build_flat():

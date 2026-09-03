@@ -22,6 +22,10 @@ MJCF_PATH = os.path.join(os.path.dirname(__file__), "assets", "go2_mjcf", "go2.x
 # PD gains the policies trained with (go2_constants): (stiffness, damping, armature)
 _GAINS = {"hip": (20.0, 1.0, 0.01), "thigh": (20.0, 1.0, 0.01),
           "calf": (40.0, 2.0, 0.02)}
+# Actuator effort limits (N·m) the training sim enforces (go2_constants): the real
+# Go2 torque limits. Without these the PD actuator applies unbounded torque, making
+# any package-sim validation optimistic.
+_EFFORT_LIMITS = {"hip": 23.5, "thigh": 23.5, "calf": 45.0}
 
 
 def build_go2_mjcf_model(with_floor=True, with_actuators=True,
@@ -50,6 +54,10 @@ def build_go2_mjcf_model(with_floor=True, with_actuators=True,
       a.gainprm[0] = kp
       a.biasprm[1] = -kp        # force = kp*(target - q) - kv*qvel
       a.biasprm[2] = -kv
+      a.forcelimited = mujoco.mjtLimited.mjLIMITED_TRUE
+      lim = _EFFORT_LIMITS[grp]
+      a.forcerange[0] = -lim
+      a.forcerange[1] = lim
   model = spec.compile()
   model.opt.timestep = 0.005
   if integrator == "implicitfast":

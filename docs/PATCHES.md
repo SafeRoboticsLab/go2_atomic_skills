@@ -69,7 +69,10 @@ must reapply the 3.0** or you get exactly the march-in-place failure.
 - Normalizers: walker `VecNormalize` (clip 10); jump `TensorNormalize` `(o-mean)/sqrt(var+1e-8)`.
 
 **MuJoCo scene the policies expect (match in your sim):** PD position actuators
-`kp/kd` = hip/thigh **20/1**, calf **40/2**; armature 0.01/0.01/0.02; integrator
+`kp/kd` = hip/thigh **20/1**, calf **40/2**; armature 0.01/0.01/0.02; **effort
+(force) limits hip/thigh ±23.5 N·m, calf ±45 N·m** (`forcelimited`; the real Go2
+torque limits the training sim enforces — omitting them lets the PD actuator apply
+unbounded torque, so any package-sim validation is optimistic); integrator
 **`implicitfast`**; timestep 0.005 with decimation 4 → **50 Hz** control; action scale
 0.25 (× the ctrl_gain 3.0 above). `build_go2_mjcf_model()` sets all of this.
 
@@ -90,6 +93,25 @@ must reapply the 3.0** or you get exactly the march-in-place failure.
    inherits fix #1 too).
 
 ## Version history
+- **0.4.1** — **actuator effort limits** added to both MuJoCo actuator builders
+  (`mujoco_helper.build_go2_mjcf_model` and the sweep's `add_actuators_and_arm`):
+  `forcerange` ±23.5 N·m hip/thigh, ±45 N·m calf (`forcelimited` on), behind a
+  single `_EFFORT_LIMITS` dict next to `_GAINS`. README:92-94 always documented
+  these (the real Go2 limits the training sim enforces) but the code never set
+  them, so package-sim validation was optimistic (unbounded torque). Everything
+  else byte-identical. **Effect (before=unbounded vs after=limited):** the walk
+  gate and the flat-floor jump trigger are *unchanged* — peak torque there stays
+  well under the limits (walk @cmd1.0: HT 12.5, calf 22.4; trigger jump: HT 15.0,
+  calf 32.5), so walk still realizes 0.882 m/s @cmd1.0 / 0.399 @cmd0.5 and the
+  jump fires identically (0% steps clipped). Clipping only appears during a real
+  gap crossing/landing, and only as brief impact transients: the unbounded sim
+  overestimated peak torque by ~40 % (HT peaks 26–33 vs 23.5, calf 54–61 vs 45),
+  but the clipped fraction is ≤0.3 % of substeps (HT) / ≤0.07 % (calf). Crossing
+  rate on the shipped E098 `hando_w30` arm shifts ≤3 pp and only in already-
+  marginal cells (fake-gap headline cells: gap0.20 D0.45 cross 1.00→1.00; gap0.30
+  D0.40 cross 0.72→0.69); no documented gate breaks. The bit-exact bridge / net
+  parity / value-filter gates are unaffected by construction (they compare obs/V
+  on transferred states and never step the package's actuators).
 - **0.4.0** — the **handover-range finetuned reach-avoid arm** becomes the DEFAULT
   jump (`hando_w30`): a gap-0.30 reach-avoid arm, 100M-step finetune on real
   walker-handover states (warm-started lineage), extracted bit-for-bit

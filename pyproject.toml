@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "go2_atomic_skills"
-version = "0.4.0"   # 0.4.0: handover-range finetuned RA arm is the default jump (E040b selectable); see docs/PATCHES.md
+version = "0.4.1"   # 0.4.1: actuator effort limits (forcerange) added to the MuJoCo actuator builders; see docs/PATCHES.md
 description = "Two trained Unitree Go2 policies (joystick walker + reach-avoid gap-jump) packaged as reusable, MuJoCo-native atomic skills. Runtime needs only numpy + torch (+ mujoco for the scene bridge)."
 readme = "README.md"
 requires-python = ">=3.9"

@@ -23,4 +23,4 @@ __all__ = [
   "fake_gap_scan", "obs_from_mujoco", "raycast_height_scan",
 ]
 
-__version__ = "0.4.0"   # 0.4.0 makes the handover-range finetuned arm the default jump; see docs/PATCHES.md
+__version__ = "0.4.1"   # 0.4.1 adds actuator effort limits (forcerange) to the MuJoCo actuator builders; see docs/PATCHES.md
