@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "go2_atomic_skills"
-version = "0.4.2"   # 0.4.2: opt-in landing latch on Go2ValueFilter (holds the jump through touchdown until a settled stand); see docs/PATCHES.md
+version = "0.4.3"   # 0.4.3: landing latch ON by default (release="timed", 0.75 s after touchdown); see docs/PATCHES.md
 description = "Two trained Unitree Go2 policies (joystick walker + reach-avoid gap-jump) packaged as reusable, MuJoCo-native atomic skills. Runtime needs only numpy + torch (+ mujoco for the scene bridge)."
 readme = "README.md"
 requires-python = ">=3.9"

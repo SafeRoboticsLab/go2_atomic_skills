@@ -93,6 +93,21 @@ unbounded torque, so any package-sim validation is optimistic); integrator
    inherits fix #1 too).
 
 ## Version history
+- **0.4.3** — **landing latch ON by default** (`landing_latch=True, release="timed",
+  release_delay_s=0.75`). This is the deployable setting from the package-sim landing
+  study on the real 0.30 m gap with the scan-estimated trigger: memoryless 0.4.1 filter
+  20-s survival 0.00 / backflip 0.24 → timed latch 0.87 / 0.04 (settle-gated release
+  never fires on a hard landing; keep "timed"). The jump arm keeps its requested
+  command through flight and touchdown, then the walker is released with a 0→cmd
+  ramp over `release_ramp_s`. Later sandbox studies put the release-delay Pareto point
+  at 0.5–0.75 s (both fine) and found that resuming the walker with a small forward
+  command (~0.3 m/s) rather than zero avoids a slow backward creep on the far edge —
+  keep `release_ramp_s` ≥ 0.5 s. `Go2ValueFilter(landing_latch=False)` restores the
+  0.4.1 memoryless behaviour byte-for-byte (gate `validation/validate_landing_latch.py`
+  now passes the flag explicitly). Also untracked the accidentally committed
+  `__pycache__` / `*.egg-info` build files. Hardware prerequisites before a run:
+  real joint gains equal to the sim contract (kp 20/40, kd 1/2), control latency
+  ≤ 20 ms, low-friction front-foot caps, no payload, and start on a 0.20 m gap.
 - **0.4.2** — **landing latch** on `Go2ValueFilter` (opt-in, `landing_latch=False`
   by default → 0.4.1 behavior byte-identical). The 0.4.0/0.4.1 filter is a
   MEMORYLESS per-step switch: with `trigger="distance"` it engages the jump only

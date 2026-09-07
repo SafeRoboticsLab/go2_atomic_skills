@@ -267,8 +267,8 @@ class Go2ValueFilter:
 
   def __init__(self, device: str = "cpu", jump_width: str = "hando_w30",
                eps: float = 0.25, trigger: str = "value", D: float = 0.40,
-               clip_action: bool = True, landing_latch: bool = False,
-               release: str = "settle", settle_time_s: float = 1.0,
+               clip_action: bool = True, landing_latch: bool = True,
+               release: str = "timed", settle_time_s: float = 1.0,
                settle_speed: float = 0.15, settle_upright: float = 0.8,
                settle_jointvel: float = 4.0, release_delay_s: float = 0.75,
                release_ramp_s: float = 0.5):
@@ -278,7 +278,9 @@ class Go2ValueFilter:
       raise ValueError(f"trigger must be one of {self.TRIGGERS}, got {trigger!r}")
     self.trigger = trigger
     self.D = float(D)
-    # --- landing-latch config (default OFF -> memoryless 0.4.1 behavior) ---
+    # --- landing-latch config (0.4.3 default ON, release="timed": the deployable
+    # setting from the sim2sim landing study; pass landing_latch=False for the
+    # memoryless 0.4.1 behaviour) ---
     self.landing_latch = bool(landing_latch)
     if release not in self.RELEASES:
       raise ValueError(f"release must be one of {self.RELEASES}, got {release!r}")

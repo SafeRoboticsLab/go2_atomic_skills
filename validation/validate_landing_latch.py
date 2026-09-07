@@ -82,7 +82,7 @@ def test_on_latches_past_gap(fx, seq):
   settle_jointvel = 3.0
   settle_upright = 0.8
   f = Go2ValueFilter(device="cpu", jump_width=width, trigger="distance", D=D,
-                     landing_latch=True, settle_time_s=settle_time_s,
+                     landing_latch=True, release="settle", settle_time_s=settle_time_s,
                      settle_jointvel=settle_jointvel, settle_upright=settle_upright,
                      release_ramp_s=0.5)
   f.reset()

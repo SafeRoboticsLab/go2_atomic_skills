@@ -23,4 +23,4 @@ __all__ = [
   "fake_gap_scan", "obs_from_mujoco", "raycast_height_scan",
 ]
 
-__version__ = "0.4.2"   # 0.4.2 adds an opt-in landing latch to Go2ValueFilter (default OFF, byte-identical); see docs/PATCHES.md
+__version__ = "0.4.3"   # 0.4.3: landing latch ON by default with release="timed" (deployable setting); landing_latch=False restores 0.4.1; see docs/PATCHES.md

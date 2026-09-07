@@ -155,7 +155,7 @@ obs groups need (get that wrong by hand and `V` silently drifts). Full detail, t
 from go2_atomic_skills import Go2ValueFilter
 from go2_atomic_skills.mujoco_helper import obs_from_mujoco, raycast_height_scan
 
-filt = Go2ValueFilter(device="cpu", trigger="distance", D=0.40)  # default arm = handover RA (0.4.0)
+filt = Go2ValueFilter(device="cpu", trigger="distance", D=0.40)  # default arm = handover RA; 0.4.3: landing latch ON (release="timed")
 filt.reset()
 
 inp  = obs_from_mujoco(mj_model, mj_data)
