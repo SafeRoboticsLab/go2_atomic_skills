@@ -93,6 +93,11 @@ unbounded torque, so any package-sim validation is optimistic); integrator
    inherits fix #1 too).
 
 ## Version history
+- **0.4.4** — **loader compatibility with torch < 1.13.** `torch.load(..., weights_only=True)`
+  raised `TypeError: 'weights_only' is an invalid keyword argument` on the robot's
+  `go2_sdk` env (torch 1.10), so `Go2ValueFilter()` could not construct. The asset
+  loader now tries `weights_only=True` and falls back to a plain load. No behaviour
+  change on torch ≥ 1.13.
 - **0.4.3** — **landing latch ON by default** (`landing_latch=True, release="timed",
   release_delay_s=0.75`). This is the deployable setting from the package-sim landing
   study on the real 0.30 m gap with the scan-estimated trigger: memoryless 0.4.1 filter

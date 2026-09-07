@@ -23,4 +23,4 @@ __all__ = [
   "fake_gap_scan", "obs_from_mujoco", "raycast_height_scan",
 ]
 
-__version__ = "0.4.3"   # 0.4.3: landing latch ON by default with release="timed" (deployable setting); landing_latch=False restores 0.4.1; see docs/PATCHES.md
+__version__ = "0.4.4"   # 0.4.4: torch<1.13 compatibility for the asset loader (robot go2_sdk env has torch 1.10); 0.4.3 made the landing latch default ON (release="timed"); see docs/PATCHES.md

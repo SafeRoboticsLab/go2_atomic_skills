@@ -28,9 +28,18 @@ def _actor_mlp(in_dim: int) -> nn.Sequential:
   )
 
 
+def _torch_load(path, device):
+  """torch.load with weights_only=True where supported (torch >= 1.13); older
+  torch (e.g. 1.10 in the robot's go2_sdk env) rejects the keyword."""
+  try:
+    return torch.load(path, map_location=device, weights_only=True)
+  except TypeError:
+    return torch.load(path, map_location=device)
+
+
 def load_actor(name: str, in_dim: int, device: str = "cpu") -> nn.Sequential:
   net = _actor_mlp(in_dim)
-  sd = torch.load(os.path.join(_ASSETS, name), map_location=device, weights_only=True)
+  sd = _torch_load(os.path.join(_ASSETS, name), device)
   net.load_state_dict(sd)
   net.eval().to(device)
   for p in net.parameters():
@@ -53,7 +62,7 @@ def _critic_mlp(in_dim: int) -> nn.Sequential:
 
 def load_critic(name: str, in_dim: int, device: str = "cpu") -> nn.Sequential:
   net = _critic_mlp(in_dim)
-  sd = torch.load(os.path.join(_ASSETS, name), map_location=device, weights_only=True)
+  sd = _torch_load(os.path.join(_ASSETS, name), device)
   net.load_state_dict(sd)
   net.eval().to(device)
   for p in net.parameters():
@@ -86,8 +95,7 @@ class JumpNorm:
   """
 
   def __init__(self, width_tag: str = "w30", device: str = "cpu"):
-    st = torch.load(os.path.join(_ASSETS, f"jump_norm_{width_tag}.pt"),
-                    map_location=device, weights_only=True)
+    st = _torch_load(os.path.join(_ASSETS, f"jump_norm_{width_tag}.pt"), device)
     self.mean = st["obs_mean"].to(device).float()
     self.var = st["obs_var"].to(device).float()
     self.eps = float(st.get("epsilon", torch.tensor(1e-8)))
